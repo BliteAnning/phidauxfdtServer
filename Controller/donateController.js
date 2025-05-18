@@ -1,16 +1,16 @@
 import DonateModel from "../Model/donate.js";
-import Stripe from "stripe";
+import https from 'https';
 
 
 const frontend_url = process.env.FRONTEND_URL;
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+
 
 const donateNow = async (req, res) => {
   try {
-    const { name, email, message, amount, paymentMethod } = req.body;
+    const { name, email, message, amount } = req.body;
 
     // Validate the request body
-    if (!name || !email || !amount || !paymentMethod) {
+    if (!name || !email || !amount ) {
       return res.status(400).json({ message: "All fields are required" });
     }
 
@@ -21,38 +21,57 @@ const donateNow = async (req, res) => {
       message: req.body.message,
       amount: req.body.amount,
       date: new Date(),
-      paymentMethod: req.body.paymentMethod,
+     
     });
 
     // Save the donation record to the database
     await newDonation.save();
 
- 
+
 
     //handling payment with stripe
-    const session = await stripe.checkout.sessions.create({
-        amount: amount * 100, // Amount in cents
-        currency: "usd",
-        payment_method_types: [paymentMethod],
-        name: name,
-        email: email,
-        metadata: {
-            donationId: newDonation._id.toString(), // Store the donation ID in metadata
-        },
-        mode: "payment",
-        success_url: `${frontend_url}/verify?success=true&donationId=${newDonation._id}`,
-        cancel_url: `${frontend_url}/verify?success=false&donationId=${newDonation._id}`
-        });
-    // Confirm the payment
-        res.status(201).json({
-            success: true,
-            message: "Payment initiated",
-            session_url: session.url, // Send the session ID to the client
-        });
     
 
+    const params = JSON.stringify({
+      "email": req.body.email,
+      "amount": req.body.amount * 100,
+      "currency": "GHS",
+    })
 
-    
+    const options = {
+      hostname: 'api.paystack.co',
+      port: 443,
+      path: '/transaction/initialize',
+      method: 'POST',
+      headers: {
+        Authorization: 'Bearer ' + process.env.PAYSTACK_SECRET_KEY,
+        'Content-Type': 'application/json'
+      }
+    }
+
+    const reqpaystack = https.request(options, respaystack => {
+      let data = ''
+
+      respaystack.on('data', (chunk) => {
+        data += chunk
+      });
+
+      respaystack.on('end', () => {
+        const paystackResponse = JSON.parse(data);
+  // Send only the authorization_url to the frontend
+        res.json({ authorization_url: paystackResponse.data.authorization_url });
+        console.log(JSON.parse(data))
+      })
+    }).on('error', error => {
+      console.error(error)
+    })
+
+    reqpaystack.write(params)
+    reqpaystack.end()
+  
+
+
+
   } catch (error) {
     console.log("Error processing donation:", error);
   }
